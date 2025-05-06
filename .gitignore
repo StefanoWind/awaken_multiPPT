@@ -1,0 +1,19 @@
+__pycache__
+*.cdf
+*.nc
+*.png
+*.csv
+*.log
+*.yaml
+<<<<<<< HEAD
+trash/*
+*.egg-info/
+*.hpl
+=======
+trash/
+*.hpl
+*.html
+*.log
+build/
+lidargo/docs/_build/
+>>>>>>> main
