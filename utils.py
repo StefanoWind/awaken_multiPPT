@@ -104,3 +104,79 @@ def draw_turbine_3d(ax,x,y,z,D,H,yaw):
 
     # Set the scale for the axis
     ax.auto_scale_xyz(scale, scale, scale)
+
+
+def error_ws(alpha,beta,wd=None):
+    Nb=len(alpha)
+    
+    #cartesian->LOS matrix
+    A=np.zeros((Nb,3))
+    for i in range(Nb):
+        A[i,:]=np.array([cosd(beta[i])*cosd(alpha[i]),cosd(beta[i])*sind(alpha[i]),sind(beta[i])])
+
+    #LOS->cartesian matrix
+    try:
+        A_plus=np.linalg.inv(A.T@A)@A.T
+    except:
+        return np.inf,np.inf,np.inf      
+    
+    #expanded solution matrix
+    M=np.zeros((3,Nb*3))
+    for i in range(3):
+        for j in range(Nb):
+            for k in range(3):
+                M[i,j*3+k]=A_plus[i,j]*A[j,k]
+    
+    #error covariance
+    S=M@M.T
+    
+    #error propagation
+    if wd==None:
+        J_Jt_avg=np.array([[0.5,0,0],[0,0.5,0],[0,0,0]])
+        var_u=np.sum(J_Jt_avg*S)
+    else:
+        J=np.array([[cosd(270-wd)],[sind(270-wd)],[0]])
+        var_u=np.sum(J@J.T*S)
+    
+    return var_u**0.5,S[0,0]**0.5,S[1,1]**0.5
+
+def error_uu(alpha,beta,wd=None):
+    Nb=len(alpha)
+    
+    #RS to LOS variance matrix
+    sa=sind(alpha)
+    ca=cosd(alpha)
+    sb=sind(beta)
+    cb=cosd(beta)
+    B=np.zeros((Nb,6))
+    B[:,0]=cb**2*ca**2
+    B[:,1]=cb**2*sa**2
+    B[:,2]=sb**2
+    B[:,3]=2*cb**2*ca*sa
+    B[:,4]=2*cb*sb*ca
+    B[:,5]=2*cb*sb*sa
+    
+    try:
+        B_inv=np.linalg.inv(B)
+    except:
+        return np.inf,np.inf,np.inf,np.inf          
+    
+    #expanded solution matrix
+    M=np.zeros((6,Nb*6))
+    for i in range(6):
+        for j in range(Nb):
+            for k in range(6):
+                M[i,j*6+k]=B_inv[i,j]*B[j,k]
+                    
+    #error covariance
+    S=M@M.T
+    
+    #error propagation
+    if wd==None:
+        J=np.array([[3/8],[3/8],[0],[0.5],[0],[0]])
+    else:
+        J=np.array([[cosd(270-wd)**2],[sind(270-wd)**2],[0],[2*cosd(270-wd)*sind(270-wd)],[0],[0]])
+        
+    var_uu=np.sum(J@J.T*S)
+    return var_uu**0.5,S[0,0]**0.5,S[1,1]**0.5,S[3,3]**0.5
+
