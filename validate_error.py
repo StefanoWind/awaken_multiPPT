@@ -5,13 +5,11 @@ Validate error formulas for scan design
 
 import os
 cd=os.path.dirname(__file__)
-import xarray as xr
 import os
 import numpy as np
 from matplotlib import pyplot as plt
 import matplotlib
-from scipy.optimize import minimize
-from utils import *
+import utils as utl
 
 plt.close('all')
 matplotlib.rcParams['font.family'] = 'serif'
@@ -20,31 +18,24 @@ matplotlib.rcParams['font.size'] = 14
 
 
 #%% Inputs
-azi=np.array([259.62, 277.17, 268.9 , 283.43, 267.35, 252.45])
-ele=np.array([ 8.84,  8.91, 10.13, 11.85, 14.58, 11.57])
-
 azi=np.array([213.33,  38.23,  70.7 ,  60.06, 217.52,  37.39])
 ele=np.array([25.63, 12.28, 13.43, 13.36, 14.9 ,  6.29])
 
 RS_rot=np.array([1,0.8,0.5,0,-0.1,0])#[IEC 61400-1]
-err=0.01
+err=0.01#error on flow field
 
-wds=np.arange(360)
-L=100
+wds=np.arange(360)#[deg] wind direction loop
+L=1000#MC draws
 
 #%% Initialization
-ws_err=np.zeros(len(wds))
-U_err=np.zeros(len(wds))
-V_err=np.zeros(len(wds))
-ws_err2=np.zeros(len(wds))
-
-uu_err=np.zeros(len(wds))
-UU_err=np.zeros(len(wds))
-VV_err=np.zeros(len(wds))
-UV_err=np.zeros(len(wds))
-uu_err2=np.zeros(len(wds))
-
 Nb=len(azi)
+
+#zeroing
+u_var=np.zeros(len(wds))
+u_var2=np.zeros(len(wds))
+
+uu_var=np.zeros(len(wds))
+uu_var2=np.zeros(len(wds))
 
 #%% Main
 #validation of WS error
@@ -52,15 +43,18 @@ Nb=len(azi)
 #cartesian->LOS matrix
 A=np.zeros((Nb,3))
 for i in range(Nb):
-    A[i,:]=np.array([cosd(ele[i])*cosd(90-azi[i]),cosd(ele[i])*sind(90-azi[i]),sind(ele[i])])
+    A[i,:]=np.array([utl.cosd(ele[i])*utl.cosd(90-azi[i]),utl.cosd(ele[i])*utl.sind(90-azi[i]),utl.sind(ele[i])])
 A_plus=np.linalg.inv(A.T@A)@A.T
 
 i_wd=0
 for wd in wds:
-    u0=cosd(270-wd)
-    v0=sind(270-wd)
+    
+    #nominal wind vector
+    u0=utl.cosd(270-wd)
+    v0=utl.sind(270-wd)
     w0=0
 
+    #perturbed wind vectors
     vel_los=np.zeros((Nb,L))
     for i in range(L):
         vel_vector=np.zeros((3,Nb))
@@ -71,28 +65,24 @@ for wd in wds:
             vel_los[j,i]=A[j,:]@vel_vector[:,j]
     
     #reconstruct velocity
-    
     vel_rec=A_plus@vel_los
-    ws_rec=(vel_rec[0,:]**2+vel_rec[1,:]**2)**0.5
+    u_rec=(vel_rec[0,:]**2+vel_rec[1,:]**2)**0.5
     
     #store directional error on wind speed
-    U_err[i_wd]=np.std(vel_rec[0,:]-u0)
-    V_err[i_wd]=np.std(vel_rec[1,:]-v0)
-    
-    ws_err[i_wd]=np.std(ws_rec-1)
-    ws_err2[i_wd]=error_ws((90-azi)%360,ele,wd)[0]*err
+    u_var[i_wd]=np.mean((u_rec-1)**2)
+    u_var2[i_wd]=utl.error_ws((90-azi)%360,ele,wd)*err**2
     i_wd+=1
     print(wd)
 
 #omnidirectional error on wind speed
-ws_err_avg=np.mean(ws_err)
-ws_err2_avg,U_err2,V_err2=tuple(x*err for x in error_ws((90-azi)%360,ele))
+u_var_avg=np.mean(u_var)
+u_var2_avg=utl.error_ws((90-azi)%360,ele)*err**2
 
 #validate error on uu
-sa=sind((90-azi)%360)
-ca=cosd((90-azi)%360)
-sb=sind(ele)
-cb=cosd(ele)
+sa=utl.sind((90-azi)%360)
+ca=utl.cosd((90-azi)%360)
+sb=utl.sind(ele)
+cb=utl.cosd(ele)
 B=np.zeros((Nb,6))
 B[:,0]=cb**2*ca**2
 B[:,1]=cb**2*sa**2
@@ -105,12 +95,12 @@ B_inv=np.linalg.inv(B)
 
 i_wd=0
 for wd in wds:
-    M_rot=np.array([[sind(wd)**2,cosd(wd)**2,0, sind(2*wd),0,0],
-                    [cosd(wd)**2,sind(wd)**2,0,-sind(2*wd),0,0],
+    M_rot=np.array([[utl.sind(wd)**2,utl.cosd(wd)**2,0, utl.sind(2*wd),0,0],
+                    [utl.cosd(wd)**2,utl.sind(wd)**2,0,-utl.sind(2*wd),0,0],
                     [0,0,1,0,0,0],
-                    [-0.5*sind(2*wd),0.5*sind(2*wd),0,-cosd(2*wd),0,0],
-                    [0,0,0,0,-sind(wd),-cosd(wd)],
-                    [0,0,0,0, cosd(wd),-sind(wd)]])
+                    [-0.5*utl.sind(2*wd),0.5*utl.sind(2*wd),0,-utl.cosd(2*wd),0,0],
+                    [0,0,0,0,-utl.sind(wd),-utl.cosd(wd)],
+                    [0,0,0,0, utl.cosd(wd),-utl.sind(wd)]])
     
     RS0=np.linalg.inv(M_rot)@RS_rot
     
@@ -123,83 +113,38 @@ for wd in wds:
     
     #reconstruct uu
     RS_rec=B_inv@var_los
-    uu_rec=RS_rec[0,:]*cosd(270-wd)**2+RS_rec[1,:]*sind(270-wd)**2+2*RS_rec[3,:]*cosd(270-wd)*sind(270-wd)
+    uu_rec=RS_rec[0,:]*utl.cosd(270-wd)**2+RS_rec[1,:]*utl.sind(270-wd)**2+2*RS_rec[3,:]*utl.cosd(270-wd)*utl.sind(270-wd)
     
     #store errors on RS
-    UU_err[i_wd]=np.std(RS_rec[0,:]-RS0[0])
-    VV_err[i_wd]=np.std(RS_rec[1,:]-RS0[1])
-    UV_err[i_wd]=np.std(RS_rec[3,:]-RS0[3])
-    
-    uu_err[i_wd]=np.std(uu_rec-RS_rot[0])
-    uu_err2[i_wd]=error_uu((90-azi)%360,ele,wd)[0]*err
+    uu_var[i_wd]=np.mean((uu_rec-RS_rot[0])**2)
+    uu_var2[i_wd]=utl.error_uu((90-azi)%360,ele,wd)*err**2
 
     i_wd+=1
     print(wd)
 
-uu_err_avg=np.mean(uu_err)
-uu_err2_avg,UU_err2,VV_err2,UV_err2=tuple(x*err for x in error_uu((90-azi)%360,ele))
-
+uu_var_avg=np.mean(uu_var)
+uu_var2_avg=utl.error_uu((90-azi)%360,ele)*err**2
 
 #%% Plots
 plt.close('all')
 plt.figure(figsize=(18,6))
-plt.subplot(1,3,1)
-plt.plot(wds,U_err,'k')
-plt.plot(wds,U_err2*wds**0,'r')
-plt.xlabel(r'$\theta_w$ [$^\circ$]')
-plt.ylabel(r'$\Delta^2(\overline{U})$')
-plt.grid()
-plt.ylim([0,np.max(ws_err)])
 
-plt.subplot(1,3,2)
-plt.plot(wds,V_err,'k')
-plt.plot(wds,V_err2*wds**0,'r')
-plt.xlabel(r'$\theta_w$ [$^\circ$]')
-plt.ylabel(r'$\Delta^2(\overline{V})$')
-plt.grid()
-plt.ylim([0,np.max(ws_err)])
-
-plt.subplot(1,3,3)
-plt.plot(wds,ws_err,'k',label=f'MC (mean={str(np.round(ws_err_avg,3))})')
-plt.plot(wds,ws_err2,'r',label=f'Theory (mean={str(np.round(ws_err2_avg,3))})')
+plt.subplot(1,2,1)
+plt.plot(wds,u_var,'k',label=f'MC (mean={str(np.round(u_var_avg,4))})')
+plt.plot(wds,u_var2,'r',label=f'Theory (mean={str(np.round(u_var2_avg,4))})')
 plt.xlabel(r'$\theta_w$ [$^\circ$]')
 plt.ylabel(r'$\Delta^2(\overline{u})$')
 plt.grid()
-plt.ylim([0,np.max(ws_err)])
+plt.ylim([0,np.max(u_var)])
 plt.legend()
 plt.tight_layout()
 
-plt.figure(figsize=(18,4))
-plt.subplot(1,4,1)
-plt.plot(wds,UU_err,'k')
-plt.plot(wds,UU_err2*wds**0,'r')
-plt.xlabel(r'$\theta_w$ [$^\circ$]')
-plt.ylabel(r'$\Delta^2(\overline{U^\prime U^\prime})$')
-plt.grid()
-plt.ylim([0,np.max(uu_err)])
-
-plt.subplot(1,4,2)
-plt.plot(wds,VV_err,'k')
-plt.plot(wds,VV_err2*wds**0,'r')
-plt.xlabel(r'$\theta_w$ [$^\circ$]')
-plt.ylabel(r'$\Delta^2(\overline{V^\prime V^\prime})$')
-plt.grid()
-plt.ylim([0,np.max(uu_err)])
-
-plt.subplot(1,4,3)
-plt.plot(wds,UV_err,'k')
-plt.plot(wds,UV_err2*wds**0,'r')
-plt.xlabel(r'$\theta_w$ [$^\circ$]')
-plt.ylabel(r'$\Delta^2(\overline{U^\prime V^\prime})$')
-plt.grid()
-plt.ylim([0,np.max(uu_err)])
-
-plt.subplot(1,4,4)
-plt.plot(wds,uu_err,'k',label=f'MC (mean={str(np.round(uu_err_avg,3))})')
-plt.plot(wds,uu_err2,'r',label=f'Theory (mean={str(np.round(uu_err2_avg,3))})')
+plt.subplot(1,2,2)
+plt.plot(wds,uu_var,'k',label=f'MC (mean={str(np.round(uu_var_avg,4))})')
+plt.plot(wds,uu_var2,'r',label=f'Theory (mean={str(np.round(uu_var2_avg,4))})')
 plt.xlabel(r'$\theta_w$ [$^\circ$]')
 plt.ylabel(r'$\Delta^2(\overline{u^\prime u^\prime})$')
 plt.grid()
 plt.legend()
-plt.ylim([0,np.max(uu_err)])
+plt.ylim([0,np.max(uu_var)])
 plt.tight_layout()

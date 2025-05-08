@@ -132,13 +132,15 @@ def error_ws(alpha,beta,wd=None):
     
     #error propagation
     if wd==None:
-        J_Jt_avg=np.array([[0.5,0,0],[0,0.5,0],[0,0,0]])
+        J_Jt_avg=np.array([[0.5,0,0],
+                           [0,0.5,0],
+                           [0, 0, 0]])
         var_u=np.sum(J_Jt_avg*S)
     else:
-        J=np.array([[cosd(270-wd)],[sind(270-wd)],[0]])
-        var_u=np.sum(J@J.T*S)
+        J=np.array([cosd(270-wd),sind(270-wd),0])
+        var_u=J@S@J.T
     
-    return var_u**0.5,S[0,0]**0.5,S[1,1]**0.5
+    return var_u
 
 def error_uu(alpha,beta,wd=None):
     Nb=len(alpha)
@@ -173,10 +175,15 @@ def error_uu(alpha,beta,wd=None):
     
     #error propagation
     if wd==None:
-        J=np.array([[3/8],[3/8],[0],[0.5],[0],[0]])
+        J_Jt_avg=np.array([[3/8, 1/8, 0,   0, 0, 0],
+                           [1/8, 3/8, 0,   0 ,0, 0],
+                           [0,   0,   0,   0, 0, 0],
+                           [0,   0,   0, 1/2, 0, 0],
+                           [0,   0,   0,   0, 0, 0],
+                           [0,   0,   0,   0, 0, 0]])
+        var_uu=np.sum(J_Jt_avg*S)
     else:
-        J=np.array([[cosd(270-wd)**2],[sind(270-wd)**2],[0],[2*cosd(270-wd)*sind(270-wd)],[0],[0]])
-        
-    var_uu=np.sum(J@J.T*S)
-    return var_uu**0.5,S[0,0]**0.5,S[1,1]**0.5,S[3,3]**0.5
+        J=np.array([cosd(270-wd)**2,sind(270-wd)**2,0,2*cosd(270-wd)*sind(270-wd),0,0])
+        var_uu=J@S@J.T
+    return var_uu
 
