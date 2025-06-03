@@ -4,6 +4,7 @@ __pycache__
 *.png
 *.csv
 *.log
+*.xlsx
 *.yaml
 <<<<<<< HEAD
 trash/*
