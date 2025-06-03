@@ -16,7 +16,11 @@ def sind(x):
 
 
 def pol2spher(theta,r,x0,y0,z0):
-    
+    '''
+
+    Polar condinates centered in x0,y0,z0 to spherical centered in 0,0,0
+
+    '''
     x=x0+r*cosd(theta)
     y=y0+r*sind(theta)
     z=z0
@@ -118,7 +122,7 @@ def error_ws(alpha,beta,wd=None):
     try:
         A_plus=np.linalg.inv(A.T@A)@A.T
     except:
-        return np.inf,np.inf,np.inf      
+        return np.inf 
     
     #expanded solution matrix
     M=np.zeros((3,Nb*3))
@@ -161,7 +165,7 @@ def error_uu(alpha,beta,wd=None):
     try:
         B_inv=np.linalg.inv(B)
     except:
-        return np.inf,np.inf,np.inf,np.inf          
+        return np.inf          
     
     #expanded solution matrix
     M=np.zeros((6,Nb*6))
