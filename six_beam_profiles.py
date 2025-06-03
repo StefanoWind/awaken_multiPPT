@@ -29,7 +29,6 @@ if len(sys.argv)==1:
     replace=False #replace existing files
     path_config=os.path.join(cd,'configs/config_235.yaml') #config path
     mode='serial' #processing mofe (serial or parallel)
-    
 else:
     sdate=sys.argv[1]
     edate=sys.argv[2]

@@ -24,6 +24,7 @@ import warnings
 import lidargo as lg
 from datetime import datetime
 import yaml
+from doe_dap_dl import DAP
 from multiprocessing import Pool
 import logging
 import re
@@ -37,15 +38,17 @@ warnings.filterwarnings('ignore')
 if len(sys.argv)==1:
     sdate='2025-06-03' #start date
     edate='2025-06-03' #end date
+    download=False
     delete=False #delete raw files?
     path_config=os.path.join(cd,'configs/config_235.yaml') #config path
     mode='serial'
 else:
     sdate=sys.argv[1] #start date
     edate=sys.argv[2]  #end date
-    delete=sys.argv[3]=="True" #delete raw files?
-    path_config=sys.argv[4]#config path
-    mode=sys.argv[5]
+    download=sys.argv[3] #download files?
+    delete=sys.argv[4]=="True" #delete raw files?
+    path_config=sys.argv[5]#config path
+    mode=sys.argv[6]
     
 #%% Initalization
 
@@ -57,8 +60,12 @@ with open(path_config, 'r') as fid:
 logfile_main=os.path.join(cd,'log',datetime.strftime(datetime.now(), '%Y%m%d.%H%M%S'))+'_errors.log'
 os.makedirs('log',exist_ok=True)
 
+#WDH
+if download:
+    a2e = DAP('a2e.energy.gov',confirm_downloads=False)
+    a2e.setup_cert_auth(username=config['username'], password=config['password'])
+
 #%% Functions
-            
 def standardize_file(file,save_path_stand,config,logfile_main,sdate,edate):
     date=re.search(r'\d{8}.\d{6}',file).group(0)[:8]
     if datetime.strptime(date,'%Y%m%d')>=datetime.strptime(sdate,'%Y-%m-%d') and datetime.strptime(date,'%Y%m%d')<=datetime.strptime(edate,'%Y-%m-%d'):
@@ -73,8 +80,24 @@ def standardize_file(file,save_path_stand,config,logfile_main,sdate,edate):
                 lf.write('\n --------------------------------- \n')
 
 #%% Main
+
 for channel in config['channels']:
     
+    #download files
+    if download:
+        _filter = {
+            'Dataset': channel,
+            'date_time': {
+                'between': [sdate.replace('-','')+'000000',edate.replace('-','')+'235959']
+            },
+            'file_type':'nc',
+            'ext1': 'user5'
+        }
+        
+        os.makedirs(os.path.join(config['path_data'],channel),exist_ok=True)
+        a2e.download_with_order(_filter, path=os.path.join(config['path_data'],channel),replace=False)
+     
+        
     #standardize all files within date range
     files=glob.glob(os.path.join(config['path_data'],channel,'*a0*user5.nc'))
     save_path_stand=os.path.join(config['path_data'],channel.replace('a0','b0'))
