@@ -38,7 +38,7 @@ warnings.filterwarnings('ignore')
 if len(sys.argv)==1:
     sdate='2025-06-03' #start date
     edate='2025-06-03' #end date
-    download=False
+    download=True
     delete=False #delete raw files?
     path_config=os.path.join(cd,'configs/config_235.yaml') #config path
     mode='serial'

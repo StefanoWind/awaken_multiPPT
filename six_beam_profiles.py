@@ -17,6 +17,7 @@ from scipy import interpolate
 import glob
 import xarray as xr
 import numpy as np
+import pandas as pd
 
 warnings.filterwarnings('ignore')
 
@@ -70,6 +71,37 @@ def vstack(a,b):
         ab=b
     return ab   
 
+def fill_only_short_nans(arr, limit=3):
+    output=arr.copy()
+    if np.sum(~np.isnan(arr))>1:
+        sel=np.arange(np.where(~np.isnan(arr))[0][0],np.where(~np.isnan(arr))[0][-1]+1)
+        s = pd.Series(arr[sel])
+        is_nan = s.isna()
+        
+        # Identify contiguous NaN blocks
+        nan_groups = (is_nan != is_nan.shift()).cumsum()[is_nan]
+        counts = nan_groups.value_counts()
+    
+        # Mask: True where NaN group is longer than limit
+        long_nan_mask = is_nan.copy()
+        for group_id, count in counts.items():
+            if count > limit:
+                long_nan_mask[nan_groups[nan_groups == group_id].index] = False
+    
+        # Replace long NaNs with a placeholder (e.g., remain NaN)
+        temp = s.copy()
+        temp[~long_nan_mask & is_nan] = np.nan  # explicitly mark long nans again
+    
+        # Interpolate only short NaNs
+        temp = temp.interpolate(limit=limit, limit_direction="both")
+    
+        # Restore long NaNs
+        temp[~long_nan_mask & is_nan] = np.nan
+        
+        output[sel]=temp.to_numpy()
+
+    return output
+
 
 def wind_retrieval(files,config,lidar_height,save_path, replace):
     
@@ -88,6 +120,8 @@ def wind_retrieval(files,config,lidar_height,save_path, replace):
     vw=[]
     
     time=np.array([],dtype='datetime64')
+    stime=np.array([],dtype='datetime64')
+    etime=np.array([],dtype='datetime64')
     
     #file naming
     files=sorted(files)
@@ -124,7 +158,9 @@ def wind_retrieval(files,config,lidar_height,save_path, replace):
         beta=data.elevation.mean(dim='scanID').values
         
         #time
-        time_avg=data.time.sel(scanID=0,beamID=0)+(data.time.sel(scanID=len(data.scanID)-1,beamID=len(data.beamID)-1)-data.time.sel(scanID=0,beamID=0))/2
+        time_srt=data.time.isel(scanID=0,beamID=0)
+        time_end=data.time.isel(scanID=-1,beamID=-1)
+        time_avg=time_srt+(time_end-time_srt)/2
         
         #average and interpolate RWS
         z=data.z.values+lidar_height
@@ -133,7 +169,9 @@ def wind_retrieval(files,config,lidar_height,save_path, replace):
         
         rws_avg_int=np.zeros((len(height),Nb))
         for i in range(Nb):
-            f_int=interpolate.interp1d(np.concatenate([[0],z[:,i],[height[-1]+1]]), np.concatenate([[np.nan],rws_avg[:,i],[np.nan]]), kind='linear')
+            x=np.concatenate([[0],z[:,i],[np.max([z[-1,i],config['max_height']])+1]])
+            y=fill_only_short_nans(np.concatenate([[np.nan],rws_avg[:,i],[np.nan]]),limit=config['max_nans'])
+            f_int=interpolate.interp1d(x,y, kind='linear')
             rws_avg_int[:,i]=f_int(height).T
     
         #velocity vector
@@ -149,13 +187,17 @@ def wind_retrieval(files,config,lidar_height,save_path, replace):
         V=vstack(V,vel_vector[1,:])
         W=vstack(W,vel_vector[2,:])
         time=np.append(time,time_avg)
+        stime=np.append(stime,time_srt)
+        etime=np.append(etime,time_end)
         
         #variance
         rws_var=data.wind_speed.where(data.qc_wind_speed==0).var(dim='scanID').values
         
         rws_var_int=np.zeros((len(height),Nb))
         for i in range(Nb):
-            f_int=interpolate.interp1d(np.concatenate([[0],z[:,i],[height[-1]+1]]), np.concatenate([[np.nan],rws_var[:,i],[np.nan]]), kind='linear')
+            x=np.concatenate([[0],z[:,i],[np.max([z[-1,i],config['max_height']])+1]])
+            y=fill_only_short_nans(np.concatenate([[np.nan],rws_var[:,i],[np.nan]]),limit=config['max_nans'])
+            f_int=interpolate.interp1d(x,y, kind='linear')
             rws_var_int[:,i]=f_int(height).T
             
         #reynolds stresses
@@ -180,6 +222,8 @@ def wind_retrieval(files,config,lidar_height,save_path, replace):
         
     #output
     Output=xr.Dataset()
+    Output['start_time']=xr.DataArray(data=stime,coords={'time':time})
+    Output['end_time']=xr.DataArray(data=etime,coords={'time':time})
     Output['U']=xr.DataArray(data=U,coords={'time':time,'height':height},
                              attrs={'units':'m/s','description':'average W-E wind component'})
     Output['V']=xr.DataArray(data=V,coords={'time':time,'height':height},
@@ -263,13 +307,13 @@ def wind_map(data,filename):
     ax.set_title(str(data.time.values[0])[:10], fontsize=label_fs)
 
     ax=plt.subplot(2,1,2)
-    CS = ax.contourf(data.time, data.height, data.tke.T, np.round(np.arange(np.nanpercentile(data.tke,5), np.nanpercentile(data.tke,95)+0.5, 0.25),1), extend='both', cmap='coolwarm')
+    CS = ax.contourf(data.time, data.height, data.ti.T, np.round(np.arange(np.nanpercentile(data.ti,5), np.nanpercentile(data.ti,95)+0.5, 1),1), extend='both', cmap='coolwarm')
 
     divider = make_axes_locatable(ax)
     cax = divider.append_axes('right', size = '2%', pad=0.65)
     cb = fig.colorbar(CS, cax=cax, orientation='vertical')
     cb.ax.tick_params(labelsize=colorbar_fs)
-    cb.set_label(r'Turbulent kinetic energy [m$^2$ s$^{-2}$]', fontsize=colorbar_fs)
+    cb.set_label(r'Turbulent intensity [%]', fontsize=colorbar_fs)
     
     ax.set_xlabel('Time (UTC)', fontsize=label_fs)
     ax.set_ylabel(r'z [m.a.g.l]', fontsize=label_fs)
@@ -286,19 +330,20 @@ for channel in config['channels_six_beam']:
     save_path=os.path.join(config['path_data'],channel.replace('b0','c1'))
     os.makedirs(save_path,exist_ok=True)
     
-    files={}
-    for d in days:
-        files[d]=glob.glob(os.path.join(config['path_data'],channel,f'*{str(d)[:10].replace("-","")}*nc'))
-        
-    if mode=='serial':
+    for flag in config['turbine_flags']:
+        files={}
         for d in days:
-            if len(files[d])>1:
-                Output=wind_retrieval(files[d],config,config['lidar_height'][channel],save_path,replace)
-    
-    elif mode=='parallel':
-        args = [(files[d], config,config['lidar_height'][channel], save_path,replace) for d in days]
-        with Pool() as pool:
-            pool.starmap(wind_retrieval, args)
-    else:
-        raise BaseException(f"{mode} is not a valid processing mode (must be serial or parallel)")
+            files[d]=glob.glob(os.path.join(config['path_data'],channel,f'*{str(d)[:10].replace("-","")}*{flag}.nc'))
+            
+        if mode=='serial':
+            for d in days:
+                if len(files[d])>0:
+                    Output=wind_retrieval(files[d],config,config['lidar_height'][channel],save_path,replace)
+        
+        elif mode=='parallel':
+            args = [(files[d], config,config['lidar_height'][channel], save_path,replace) for d in days]
+            with Pool() as pool:
+                pool.starmap(wind_retrieval, args)
+        else:
+            raise BaseException(f"{mode} is not a valid processing mode (must be serial or parallel)")
      
